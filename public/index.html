@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>רועה הלילה | Night Watch Multiplayer</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        #lobby {
+            position: absolute;
+            z-index: 20;
+            background: rgba(15, 20, 15, 0.96);
+            border: 2px solid #27ae60;
+            border-radius: 16px;
+            padding: 32px 40px;
+            text-align: center;
+            box-shadow: 0 0 40px rgba(0,0,0,0.9);
+            width: 340px;
+        }
+        #lobby h1 {
+            margin: 0 0 8px 0;
+            color: #f1c40f;
+            font-size: 28px;
+        }
+        #lobby p {
+            color: #bbb;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        #lobby input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background: #222;
+            color: #fff;
+            font-size: 16px;
+            text-align: center;
+        }
+        .btn {
+            width: 100%;
+            padding: 11px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: 0.15s;
+        }
+        .btn-green { background: #27ae60; color: #fff; }
+        .btn-green:hover { background: #2ecc71; }
+        .btn-blue { background: #2980b9; color: #fff; }
+        .btn-blue:hover { background: #3498db; }
+        .divider {
+            margin: 14px 0;
+            color: #777;
+            font-size: 13px;
+        }
+        #lobbyError {
+            color: #e74c3c;
+            font-size: 14px;
+            min-height: 20px;
+            margin-top: 6px;
+        }
+
+        #ui {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 8px 16px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            margin-bottom: 8px;
+            font-size: 14.5px;
+        }
+        .stat span {
+            font-weight: bold;
+            color: #ffd700;
+        }
+        #roomBadge {
+            background: #2c3e50;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid #4a6b82;
+            cursor: pointer;
+            font-weight: bold;
+            color: #1abc9c;
+        }
+        #roomBadge:hover { background: #34495e; }
+        #muteBtn {
+            background: #2c3e50;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 4px 10px;
+            font-size: 15px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        canvas {
+            border: 3px solid #444;
+            border-radius: 8px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            cursor: crosshair;
+        }
+        #controls {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #aaa;
+            text-align: center;
+        }
+        #gameOver {
+            position: absolute;
+            z-index: 15;
+            background: rgba(0, 0, 0, 0.92);
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            border: 2px solid #e74c3c;
+            display: none;
+        }
+        #gameOver button {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="lobby">
+        <h1>🐑 רועה הלילה</h1>
+        <p>משחק הישרדות משותף אונליין</p>
+        <input type="text" id="playerNameInput" placeholder="הכנס את השם שלך" maxlength="12">
+        <button class="btn btn-green" onclick="createRoom()">צור חדר חדש (שחק עם חבר)</button>
+        <div class="divider">— או הצטרף לחדר קיים —</div>
+        <input type="text" id="roomCodeInput" placeholder="קוד חדר (למשל: AB12)" maxlength="6" style="text-transform: uppercase;">
+        <button class="btn btn-blue" onclick="joinRoom()">הצטרף לחדר</button>
+        <div id="lobbyError"></div>
+    </div>
+
+    <div id="ui">
+        <div id="roomBadge" onclick="copyRoomCode()" title="לחץ להעתקת קוד החדר">חדר: <span id="roomCodeDisplay">----</span> 📋</div>
+        <div class="stat">שלב: <span id="phaseText">יום 1</span></div>
+        <div class="stat">זמן: <span id="timerText">30</span></div>
+        <div class="stat">❤️ חיים: <span id="hpText" style="color: #2ecc71;">100</span></div>
+        <div class="stat">🐑 כבשים: <span id="sheepText">5</span></div>
+        <div class="stat">🪵 עצים: <span id="woodText">15</span></div>
+        <div class="stat">⚔️ חרב: <span id="swordText" style="color: #95a5a6;">אין (C)</span></div>
+        <div class="stat">📍 אזור: <span id="sectorText">הדיר (מרכז)</span></div>
+        <button id="muteBtn" onclick="toggleMute()" title="השתק / הפעל צלילים">🔊</button>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="550"></canvas>
+
+    <div id="controls">
+        תנועה: <b>חצים / WASD</b> | כריתה: <b>SPACE</b> | חרב (10 עצים): <b>C</b> | תקיפה: <b>X</b> | גדר (3): <b>F</b> | לפיד (5): <b>T</b> | להרים חבר שנפל: <b>התקרב אליו</b>
+    </div>
+
+    <div id="gameOver">
+        <h1 id="gameOverTitle" style="color: #e74c3c;">העדר נטרף!</h1>
+        <p id="finalScore">שרדתם 0 שניות</p>
+        <button onclick="restartGame()">שחקו שוב יחד</button>
+    </div>
+
+<script>
+const socket = io();
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const lightCanvas = document.createElement('canvas');
+lightCanvas.width = canvas.width;
+lightCanvas.height = canvas.height;
+const lightCtx = lightCanvas.getContext('2d');
+
+let myPlayerId = null;
+let currentRoomCode = null;
+let gameState = null;
+
+// ==========================================
+// לובי וחיבור לחדר
+// ==========================================
+function createRoom() {
+    initAudio();
+    const name = document.getElementById('playerNameInput').value.trim() || 'רועה 1';
+    socket.emit('createRoom', { playerName: name });
+}
+
+function joinRoom() {
+    initAudio();
+    const name = document.getElementById('playerNameInput').value.trim() || 'רועה 2';
+    const code = document.getElementById('roomCodeInput').value.trim();
+    if (!code) {
+        document.getElementById('lobbyError').innerText = 'הכנס קוד חדר מהחבר שלך';
+        return;
+    }
+    socket.emit('joinRoom', { roomCode: code, playerName: name });
+}
+
+function copyRoomCode() {
+    if (!currentRoomCode) return;
+    navigator.clipboard.writeText(currentRoomCode);
+    const badge = document.getElementById('roomBadge');
+    badge.innerHTML = `הועתק: <span id="roomCodeDisplay">${currentRoomCode}</span> ✅`;
+    setTimeout(() => {
+        badge.innerHTML = `חדר: <span id="roomCodeDisplay">${currentRoomCode}</span> 📋`;
+    }, 1500);
+}
+
+function restartGame() {
+    socket.emit('restartRoom');
+}
+
+socket.on('joinedRoom', ({ roomCode, playerId }) => {
+    myPlayerId = playerId;
+    currentRoomCode = roomCode;
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('roomCodeDisplay').innerText = roomCode;
+});
+
+socket.on('joinError', (msg) => {
+    document.getElementById('lobbyError').innerText = msg;
+});
+
+socket.on('state', (state) => {
+    gameState = state;
+    updateUI();
+});
+
+socket.on('sound', (type) => {
+    playSound(type);
+});
+
+// ==========================================
+// מערכת סאונד (Web Audio API)
+// ==========================================
+let audioCtx = null;
+let isMuted = false;
+
+function initAudio() {
+    if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function toggleMute() {
+    isMuted = !isMuted;
+    document.getElementById('muteBtn').innerText = isMuted ? '🔇' : '🔊';
+}
+
+function playSound(type) {
+    if (isMuted) return;
+    initAudio();
+    const now = audioCtx.currentTime;
+
+    if (type === 'chop') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.exponentialRampToValueAtTime(45, now + 0.11);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + 0.12);
+    } else if (type === 'treeFall') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(110, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + 0.35);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.36);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + 0.36);
+    } else if (type === 'build') {
+        [0, 0.08].forEach((offset, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(idx === 0 ? 280 : 380, now + offset);
+            osc.frequency.exponentialRampToValueAtTime(180, now + offset + 0.06);
+            gain.gain.setValueAtTime(0.14, now + offset);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.07);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(now + offset); osc.stop(now + offset + 0.07);
+        });
+    } else if (type === 'craft') {
+        [330, 440, 587].forEach((freq, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + i * 0.06);
+            gain.gain.setValueAtTime(0.2, now + i * 0.06);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.06 + 0.12);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(now + i * 0.06); osc.stop(now + i * 0.06 + 0.12);
+        });
+    } else if (type === 'swing') {
+        const bufferSize = audioCtx.sampleRate * 0.16;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(900, now);
+        filter.frequency.exponentialRampToValueAtTime(250, now + 0.16);
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
+        noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+        noise.start(now);
+    } else if (type === 'wolfKill') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(420, now);
+        osc.frequency.exponentialRampToValueAtTime(95, now + 0.25);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.26);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + 0.26);
+    } else if (type === 'playerHurt') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.linearRampToValueAtTime(65, now + 0.22);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.23);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + 0.23);
+    } else if (type === 'sheepBleat' || type === 'sheepSoft') {
+        const isSoft = (type === 'sheepSoft');
+        const osc = audioCtx.createOscillator();
+        const lfo = audioCtx.createOscillator();
+        const lfoGain = audioCtx.createGain();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(isSoft ? 410 : 360, now);
+        osc.frequency.linearRampToValueAtTime(isSoft ? 370 : 290, now + 0.3);
+        lfo.frequency.setValueAtTime(22, now);
+        lfoGain.gain.setValueAtTime(14, now);
+        lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+        gain.gain.setValueAtTime(isSoft ? 0.11 : 0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.32);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); lfo.start(now);
+        osc.stop(now + 0.32); lfo.stop(now + 0.32);
+    } else if (type === 'rescue') {
+        [440, 554.37, 659.25, 880].forEach((freq, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + i * 0.08);
+            gain.gain.setValueAtTime(0.22, now + i * 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.08 + 0.22);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(now + i * 0.08); osc.stop(now + i * 0.08 + 0.22);
+        });
+    } else if (type === 'nightHowl') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.linearRampToValueAtTime(490, now + 0.35);
+        osc.frequency.exponentialRampToValueAtTime(230, now + 1.1);
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.22, now + 0.25);
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 1.15);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + 1.15);
+    } else if (type === 'morning') {
+        [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.11);
+            gain.gain.setValueAtTime(0.18, now + idx * 0.11);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.11 + 0.25);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(now + idx * 0.11); osc.stop(now + idx * 0.11 + 0.25);
+        });
+    } else if (type === 'gameOver') {
+        [300, 260, 220, 160].forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.18);
+            gain.gain.setValueAtTime(0.2, now + idx * 0.18);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.18 + 0.25);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(now + idx * 0.18); osc.stop(now + idx * 0.18 + 0.25);
+        });
+    }
+}
+
+// ==========================================
+// שליחת קלט לשרת
+// ==========================================
+const keysState = { up: false, down: false, left: false, right: false };
+const mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+
+function sendInput() {
+    if (!myPlayerId || !gameState || !gameState.players[myPlayerId]) return;
+    const me = gameState.players[myPlayerId];
+    const aimAngle = Math.atan2(mouse.y - me.y, mouse.x - me.x);
+    socket.emit('input', { keys: keysState, aimAngle });
+}
+
+window.addEventListener('keydown', e => {
+    if (!myPlayerId) return;
+    initAudio();
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') keysState.up = true;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') keysState.down = true;
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') keysState.left = true;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') keysState.right = true;
+    sendInput();
+
+    if (e.code === 'KeyF') socket.emit('action', 'fence');
+    if (e.code === 'KeyT') socket.emit('action', 'torch');
+    if (e.code === 'KeyC') socket.emit('action', 'craft');
+    if (e.code === 'KeyX') socket.emit('action', 'attack');
+    if (e.code === 'Space') socket.emit('action', 'chop');
+});
+
+window.addEventListener('keyup', e => {
+    if (!myPlayerId) return;
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') keysState.up = false;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') keysState.down = false;
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') keysState.left = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') keysState.right = false;
+    sendInput();
+});
+
+canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+    sendInput();
+});
+
+function getSectorName(sx, sy) {
+    if (sx === 0 && sy === 0) return "הדיר (מרכז)";
+    const dist = Math.max(Math.abs(sx), Math.abs(sy));
+    const prefix = dist === 2 ? "מעמקי היער" : "יער";
+    let dir = "";
+    if (sy < 0) dir += "הצפוני";
+    else if (sy > 0) dir += "הדרומי";
+    if (sx < 0) dir += (dir ? "-" : "ה") + "מערבי";
+    else if (sx > 0) dir += (dir ? "-" : "ה") + "מזרחי";
+    return `${prefix} ${dir} (${sx},${sy})`;
+}
+
+function updateUI() {
+    if (!gameState || !myPlayerId || !gameState.players[myPlayerId]) return;
+    const me = gameState.players[myPlayerId];
+
+    document.getElementById('phaseText').innerText = (gameState.isNight ? 'לילה ' : 'יום ') + gameState.day;
+    document.getElementById('phaseText').style.color = gameState.isNight ? '#3498db' : '#f1c40f';
+    document.getElementById('timerText').innerText = gameState.phaseTimer;
+
+    const hpEl = document.getElementById('hpText');
+    hpEl.innerText = me.hp > 0 ? Math.ceil(me.hp) : 'פצוע (חכה לחבר!)';
+    hpEl.style.color = me.hp > 50 ? '#2ecc71' : (me.hp > 25 ? '#f39c12' : '#e74c3c');
+
+    const swordEl = document.getElementById('swordText');
+    if (me.swordUses > 0) {
+        swordEl.innerText = `${me.swordUses}/3 שימושים`;
+        swordEl.style.color = '#e67e22';
+    } else if (gameState.wood >= 10) {
+        swordEl.innerText = 'מוכן (C)';
+        swordEl.style.color = '#2ecc71';
+    } else {
+        swordEl.innerText = 'אין (10)';
+        swordEl.style.color = '#95a5a6';
+    }
+
+    const sheepEl = document.getElementById('sheepText');
+    sheepEl.innerText = me.followingSheep.length > 0
+        ? `${gameState.sheep.length} (+${me.followingSheep.length} בדרך!)`
+        : gameState.sheep.length;
+
+    document.getElementById('woodText').innerText = gameState.wood;
+    document.getElementById('sectorText').innerText = getSectorName(me.sector.x, me.sector.y);
+
+    const gameOverEl = document.getElementById('gameOver');
+    if (!gameState.gameRunning) {
+        document.getElementById('gameOverTitle').innerText = gameState.gameOverReason;
+        document.getElementById('finalScore').innerText = `שרדתם ${gameState.totalSecondsSurvived} שניות (עד לילה ${gameState.day}) | הצלתם ${gameState.rescuedCount} כבשים תועות`;
+        gameOverEl.style.display = 'block';
+    } else {
+        gameOverEl.style.display = 'none';
+    }
+}
+
+// ==========================================
+// פונקציות ציור (זהות לגרפיקה המאוירת)
+// ==========================================
+function drawCartoonTorch(t, isNight, frameCount) {
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    const seed = t.seed || 0;
+    const flicker = Math.sin(frameCount * 0.25 + seed) * 2.2;
+    const sway = Math.cos(frameCount * 0.18 + seed) * 2;
+
+    const glowRadius = 26 + flicker * 1.5;
+    const glowGrad = ctx.createRadialGradient(0, -14, 2, 0, -14, glowRadius);
+    glowGrad.addColorStop(0, 'rgba(255, 190, 50, 0.45)');
+    glowGrad.addColorStop(0.6, 'rgba(230, 126, 34, 0.15)');
+    glowGrad.addColorStop(1, 'rgba(230, 126, 34, 0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath(); ctx.arc(0, -14, glowRadius, 0, Math.PI * 2); ctx.fill();
+
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.fillStyle = isNight ? '#3b5e2b' : '#8bc34a';
+    ctx.strokeStyle = '#111111'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-9, 10); ctx.quadraticCurveTo(-7, 4, -3, 7);
+    ctx.quadraticCurveTo(0, 3, 3, 7); ctx.quadraticCurveTo(7, 4, 9, 10);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = isNight ? '#523319' : '#8d5b3c';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(-2.5, 10); ctx.lineTo(-3.5, -8); ctx.lineTo(3.5, -8); ctx.lineTo(2.5, 10);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#34495e';
+    ctx.beginPath(); ctx.roundRect(-5, -12, 10, 5, 1.5); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#e67e22'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-6, -12); ctx.quadraticCurveTo(-9, -20, sway, -28 - flicker);
+    ctx.quadraticCurveTo(9, -20, 6, -12); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#f1c40f';
+    ctx.beginPath();
+    ctx.moveTo(-4, -12); ctx.quadraticCurveTo(-5.5, -18, sway * 0.7, -23 - flicker * 0.7);
+    ctx.quadraticCurveTo(5.5, -18, 4, -12); ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle = '#fff9d6';
+    ctx.beginPath(); ctx.arc(0, -14.5, 2.3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+
+function drawFenceRails(fences, isNight) {
+    ctx.save();
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    for (let i = 0; i < fences.length; i++) {
+        for (let j = i + 1; j < fences.length; j++) {
+            const f1 = fences[i], f2 = fences[j];
+            const dist = Math.hypot(f1.x - f2.x, f1.y - f2.y);
+            if (dist < 58 && dist > 6) {
+                const angle = Math.atan2(f2.y - f1.y, f2.x - f1.x);
+                ctx.save();
+                ctx.translate(f1.x, f1.y); ctx.rotate(angle);
+                ctx.fillStyle = isNight ? '#5c3a1e' : '#9c6334';
+                ctx.strokeStyle = '#111111'; ctx.lineWidth = 2;
+                ctx.fillRect(0, -1, dist, 5); ctx.strokeRect(0, -1, dist, 5);
+                ctx.fillStyle = isNight ? '#6e4524' : '#b5743e';
+                ctx.fillRect(0, -9, dist, 5); ctx.strokeRect(0, -9, dist, 5);
+                ctx.restore();
+            }
+        }
+    }
+    ctx.restore();
+}
+
+function drawCartoonFence(f, isNight) {
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    const hpRatio = f.hp / (f.maxHp || 100);
+    if (hpRatio < 0.7) ctx.rotate((1 - hpRatio) * 0.22 * (Math.sin(f.x) > 0 ? 1 : -1));
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+    ctx.fillStyle = isNight ? '#3b5e2b' : '#8bc34a';
+    ctx.strokeStyle = '#111111'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-13, 10); ctx.quadraticCurveTo(-10, 3, -5, 6);
+    ctx.quadraticCurveTo(0, 1, 5, 6); ctx.quadraticCurveTo(10, 3, 13, 10);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = isNight ? '#6e4524' : '#b5743e'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.roundRect(-14, -9, 28, 5, 1.5); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(-14, -1, 28, 5, 1.5); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = isNight ? '#523319' : '#8d5b3c'; ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(-5, 10); ctx.lineTo(-5, -12); ctx.lineTo(0, -18);
+    ctx.lineTo(5, -12); ctx.lineTo(5, 10); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    if (hpRatio < 1) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(-12, -25, 24, 3.5);
+        ctx.fillStyle = hpRatio > 0.4 ? '#f39c12' : '#e74c3c';
+        ctx.fillRect(-12, -25, 24 * hpRatio, 3.5);
+    }
+    ctx.restore();
+}
+
+function drawCartoonTree(t, isNight) {
+    ctx.save();
+    let shakeOffset = t.shake > 0 ? Math.sin(t.shake * 2.5) * 3 : 0;
+    ctx.translate(t.x + shakeOffset, t.y);
+    ctx.scale(0.62, 0.62);
+    ctx.lineWidth = 3.2; ctx.strokeStyle = '#111111';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+    ctx.fillStyle = isNight ? '#3b5e2b' : '#8bc34a';
+    ctx.beginPath();
+    ctx.moveTo(-42, 22); ctx.quadraticCurveTo(-36, 12, -26, 16);
+    ctx.quadraticCurveTo(-30, 8, -20, 8); ctx.quadraticCurveTo(-16, 13, -12, 16);
+    ctx.lineTo(-10, 22); ctx.stroke(); ctx.fill();
+
+    ctx.fillStyle = isNight ? '#4a301d' : '#8d5b3c';
+    ctx.beginPath();
+    ctx.moveTo(-30, 26); ctx.quadraticCurveTo(-13, 18, -12, -10);
+    ctx.lineTo(-26, -18); ctx.lineTo(-22, -23); ctx.lineTo(-11, -17);
+    ctx.lineTo(-15, -34); ctx.lineTo(-5, -34); ctx.quadraticCurveTo(0, -24, 5, -34);
+    ctx.lineTo(15, -34); ctx.lineTo(11, -18); ctx.lineTo(24, -24);
+    ctx.lineTo(27, -18); ctx.lineTo(12, -10); ctx.quadraticCurveTo(13, 18, 32, 26);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    const leafColor = isNight ? '#1c421e' : '#58a646';
+    const puffs = [
+        { x: -32, y: -32, r: 17 }, { x: -24, y: -52, r: 18 }, { x: -8, y: -66, r: 17 },
+        { x: 14, y: -64, r: 19 }, { x: 30, y: -48, r: 17 }, { x: 36, y: -30, r: 16 },
+        { x: 22, y: -24, r: 14 }, { x: -16, y: -26, r: 14 }, { x: 2, y: -44, r: 22 }
+    ];
+    ctx.fillStyle = leafColor;
+    puffs.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); });
+    ctx.beginPath();
+    ctx.arc(-32, -32, 17, Math.PI * 0.4, Math.PI * 1.45);
+    ctx.arc(-24, -52, 18, Math.PI * 0.9, Math.PI * 1.75);
+    ctx.arc(-8, -66, 17, Math.PI * 1.15, Math.PI * 1.9);
+    ctx.arc(14, -64, 19, Math.PI * 1.25, Math.PI * 0.15);
+    ctx.arc(30, -48, 17, Math.PI * 1.65, Math.PI * 0.35);
+    ctx.arc(36, -30, 16, Math.PI * 1.8, Math.PI * 0.65);
+    ctx.arc(22, -24, 14, Math.PI * 0.1, Math.PI * 0.85);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawCuteSheep(s, badgeType, frameCount) {
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    const isMoving = Math.hypot(s.vx, s.vy) > 0.1;
+    const bounce = isMoving ? Math.abs(Math.sin(frameCount * 0.2)) * 2.5 : 0;
+    ctx.translate(0, -bounce);
+    if (s.facing > 0) ctx.scale(-1, 1);
+    ctx.scale(0.58, 0.58);
+
+    ctx.lineWidth = 3.2; ctx.strokeStyle = '#111111';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+    [-14, -5, 7, 16].forEach((lx, idx) => {
+        const legOffset = isMoving ? Math.sin(frameCount * 0.25 + idx) * 2 : 0;
+        ctx.fillStyle = '#f7d5b1';
+        ctx.fillRect(lx, 12 + legOffset, 6, 12); ctx.strokeRect(lx, 12 + legOffset, 6, 12);
+        ctx.fillStyle = '#5c3c24';
+        ctx.fillRect(lx, 20 + legOffset, 6, 5); ctx.strokeRect(lx, 20 + legOffset, 6, 5);
+    });
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(27, 2, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-6, 3, 12, 0, Math.PI * 2); ctx.arc(6, 2, 13, 0, Math.PI * 2);
+    ctx.arc(17, 4, 11, 0, Math.PI * 2); ctx.arc(12, 10, 10, 0, Math.PI * 2);
+    ctx.arc(0, 11, 11, 0, Math.PI * 2); ctx.arc(-10, 9, 10, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#f7d5b1';
+    ctx.beginPath(); ctx.roundRect(-26, -18, 22, 22, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(-22, -19, 6, 0, Math.PI * 2); ctx.arc(-15, -22, 7, 0, Math.PI * 2); ctx.arc(-8, -19, 6, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#111111';
+    ctx.beginPath(); ctx.arc(-20, -6, 2, 0, Math.PI * 2); ctx.arc(-10, -6, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    if (badgeType) {
+        ctx.save();
+        const floatY = Math.sin(frameCount * 0.12) * 3;
+        ctx.translate(s.x, s.y - 26 + floatY);
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillStyle = badgeType === 'lost' ? '#f1c40f' : '#e74c3c';
+        ctx.strokeStyle = '#111'; ctx.lineWidth = 3;
+        const txt = badgeType === 'lost' ? '?' : '♥';
+        ctx.strokeText(txt, 0, 0); ctx.fillText(txt, 0, 0);
+        ctx.restore();
+    }
+}
+
+function drawCartoonWolf(w, frameCount) {
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    const runBounce = Math.abs(Math.sin(frameCount * 0.35 + w.x)) * 2.5;
+    ctx.translate(0, -runBounce);
+    if (w.facing < 0) ctx.scale(-1, 1);
+    ctx.scale(0.65, 0.65);
+
+    const furMain = w.blinded ? '#7f8c8d' : '#555b61';
+    const furDark = w.blinded ? '#636e72' : '#3d4247';
+
+    ctx.lineWidth = 3; ctx.strokeStyle = '#111111';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+    ctx.fillStyle = furMain;
+    ctx.beginPath();
+    ctx.moveTo(-18, -2); ctx.quadraticCurveTo(-34, -12, -36, -2);
+    ctx.quadraticCurveTo(-30, 8, -16, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    const legSwing = Math.sin(frameCount * 0.38) * 6;
+    ctx.fillStyle = furDark;
+    ctx.beginPath(); ctx.roundRect(-14 - legSwing * 0.5, 8, 6, 14, 3); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(8 + legSwing * 0.5, 8, 6, 14, 3); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = furMain;
+    ctx.beginPath(); ctx.ellipse(-2, 2, 19, 11, -0.05, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(13, -8, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath(); ctx.moveTo(18, -3); ctx.lineTo(29, -1); ctx.lineTo(26, 3); ctx.lineTo(16, 1); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = furMain;
+    ctx.beginPath(); ctx.moveTo(17, -12); ctx.lineTo(31, -8); ctx.lineTo(30, -3); ctx.lineTo(17, -3); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = w.blinded ? '#f1c40f' : '#ff2e2e';
+    ctx.beginPath(); ctx.arc(17, -10, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+
+function drawWoodenSword() {
+    ctx.save();
+    ctx.fillStyle = '#683f22'; ctx.strokeStyle = '#38200f'; ctx.lineWidth = 1.2;
+    ctx.fillRect(9, -2, 8.5, 4); ctx.strokeRect(9, -2, 8.5, 4);
+    ctx.beginPath(); ctx.moveTo(17.5, -7.5); ctx.lineTo(20.5, -9); ctx.lineTo(20.5, 9); ctx.lineTo(17.5, 7.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#a46c3e';
+    ctx.beginPath(); ctx.moveTo(20.2, -3.2); ctx.lineTo(42, -2.7); ctx.lineTo(47.5, 0); ctx.lineTo(42, 2.7); ctx.lineTo(20.2, 3.2); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+}
+
+function drawShepherd(p, frameCount) {
+    ctx.save();
+
+    if (p.swingTimer > 0) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.beginPath(); ctx.moveTo(0, 0);
+        ctx.arc(0, 0, 68, p.swingAngle - 1.15, p.swingAngle + 1.15);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(255, 255, 255, ${p.swingTimer * 0.035})`;
+        ctx.fill();
+        ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+
+    // אם השחקן פצוע (0 חיים), שוכב על הצד ומחכה לחבר
+    if (p.hp <= 0) {
+        ctx.rotate(Math.PI / 2);
+        ctx.globalAlpha = 0.85;
+    } else {
+        const walkBounce = p.isMoving ? Math.abs(Math.sin(frameCount * 0.25)) * 2.5 : 0;
+        ctx.translate(0, -walkBounce);
+        const dir = (p.swingTimer > 0) ? (Math.cos(p.swingAngle) >= 0 ? 1 : -1) : p.facing;
+        if (dir < 0) ctx.scale(-1, 1);
+    }
+
+    const isFlashingHurt = (p.hurtTimer > 0 && Math.floor(frameCount / 3) % 2 === 0);
+    ctx.lineWidth = 2.4; ctx.strokeStyle = '#111111';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+    const legSwing = p.isMoving ? Math.sin(frameCount * 0.3) * 4 : 0;
+    ctx.fillStyle = isFlashingHurt ? '#e74c3c' : '#5d4037';
+    ctx.beginPath(); ctx.roundRect(-7, 6 + legSwing * 0.5, 5.5, 9, 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(1.5, 6 - legSwing * 0.5, 5.5, 9, 2); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = isFlashingHurt ? '#e74c3c' : p.color;
+    ctx.beginPath(); ctx.roundRect(-9, -6, 18, 14, 5); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#4e342e';
+    ctx.fillRect(-9, 2, 18, 3.5); ctx.strokeRect(-9, 2, 18, 3.5);
+
+    ctx.fillStyle = isFlashingHurt ? '#e74c3c' : '#f7d5b1';
+    ctx.beginPath(); ctx.arc(0, -13, 8.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#111111';
+    ctx.beginPath(); ctx.arc(2.5, -13, 1.5, 0, Math.PI * 2); ctx.arc(6.5, -13, 1.5, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = isFlashingHurt ? '#c0392b' : '#8d5b3c';
+    ctx.beginPath(); ctx.ellipse(0, -18, 14, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, -19, 8, Math.PI, 0); ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    if (p.hp > 0 && (p.swordUses > 0 || p.swingTimer > 0)) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        let aimAngle = p.aimAngle;
+        if (p.swingTimer > 0) {
+            aimAngle = p.swingAngle - 0.9 + ((12 - p.swingTimer) / 12) * 1.8;
+        }
+        ctx.rotate(aimAngle);
+        drawWoodenSword();
+        ctx.restore();
+    }
+
+    // שם השחקן ומד חיים מעליו
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    const label = p.hp <= 0 ? `${p.name} (פצוע! התקרב להרים)` : p.name;
+    ctx.strokeText(label, p.x, p.y - 28);
+    ctx.fillText(label, p.x, p.y - 28);
+
+    if (p.hp > 0 && p.hp < p.maxHp) {
+        ctx.fillStyle = '#333';
+        ctx.fillRect(p.x - 15, p.y + 18, 30, 4);
+        ctx.fillStyle = '#2ecc71';
+        ctx.fillRect(p.x - 15, p.y + 18, 30 * (p.hp / p.maxHp), 4);
+    }
+
+    ctx.restore();
+}
+
+// ==========================================
+// תאורת לילה משותפת לכל השחקנים בסקטור
+// ==========================================
+function renderNightLighting(sec, playersInSector, frameCount) {
+    lightCtx.globalCompositeOperation = 'source-over';
+    lightCtx.clearRect(0, 0, lightCanvas.width, lightCanvas.height);
+    lightCtx.fillStyle = 'rgba(0, 0, 12, 0.94)';
+    lightCtx.fillRect(0, 0, lightCanvas.width, lightCanvas.height);
+
+    lightCtx.globalCompositeOperation = 'destination-out';
+
+    playersInSector.forEach(p => {
+        if (p.hp <= 0) return;
+        const beamGrad = lightCtx.createRadialGradient(p.x, p.y, 15, p.x, p.y, 240);
+        beamGrad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+        beamGrad.addColorStop(0.82, 'rgba(0, 0, 0, 0.95)');
+        beamGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        lightCtx.fillStyle = beamGrad;
+        lightCtx.beginPath();
+        lightCtx.moveTo(p.x, p.y);
+        lightCtx.arc(p.x, p.y, 240, p.aimAngle - 0.36, p.aimAngle + 0.36);
+        lightCtx.closePath();
+        lightCtx.fill();
+
+        const playerAura = lightCtx.createRadialGradient(p.x, p.y, 10, p.x, p.y, 52);
+        playerAura.addColorStop(0, 'rgba(0, 0, 0, 1)');
+        playerAura.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        lightCtx.fillStyle = playerAura;
+        lightCtx.beginPath();
+        lightCtx.arc(p.x, p.y, 52, 0, Math.PI * 2);
+        lightCtx.fill();
+    });
+
+    sec.torches.forEach(t => {
+        const flicker = Math.sin(frameCount * 0.22 + (t.seed || 0)) * 5;
+        const r = 98 + flicker;
+        const torchLight = lightCtx.createRadialGradient(t.x, t.y - 10, 15, t.x, t.y - 10, r);
+        torchLight.addColorStop(0, 'rgba(0, 0, 0, 1)');
+        torchLight.addColorStop(0.7, 'rgba(0, 0, 0, 0.9)');
+        torchLight.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        lightCtx.fillStyle = torchLight;
+        lightCtx.beginPath();
+        lightCtx.arc(t.x, t.y - 10, r, 0, Math.PI * 2);
+        lightCtx.fill();
+    });
+
+    ctx.drawImage(lightCanvas, 0, 0);
+
+    sec.torches.forEach(t => {
+        const warmTint = ctx.createRadialGradient(t.x, t.y - 10, 5, t.x, t.y - 10, 85);
+        warmTint.addColorStop(0, 'rgba(255, 165, 40, 0.22)');
+        warmTint.addColorStop(1, 'rgba(255, 165, 40, 0)');
+        ctx.fillStyle = warmTint;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y - 10, 85, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+function drawMinimap(me) {
+    ctx.save();
+    const mapX = 14, mapY = 14, cellSize = 15;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 1.5;
+    ctx.fillRect(mapX - 4, mapY - 4, cellSize * 5 + 8, cellSize * 5 + 8);
+    ctx.strokeRect(mapX - 4, mapY - 4, cellSize * 5 + 8, cellSize * 5 + 8);
+
+    const homeSec = gameState.worldSectors['0,0'];
+    const homeWolves = homeSec ? homeSec.wolves.length : 0;
+
+    for (let sx = -2; sx <= 2; sx++) {
+        for (let sy = -2; sy <= 2; sy++) {
+            const gx = mapX + (sx + 2) * cellSize;
+            const gy = mapY + (sy + 2) * cellSize;
+            const isHome = (sx === 0 && sy === 0);
+            const dist = Math.max(Math.abs(sx), Math.abs(sy));
+
+            if (isHome) {
+                ctx.fillStyle = (homeWolves > 0 && Math.floor(gameState.frameCount / 15) % 2 === 0) ? '#e74c3c' : '#27ae60';
+            } else {
+                ctx.fillStyle = dist === 2 ? '#142914' : '#1e3a1e';
+            }
+            ctx.fillRect(gx + 1, gy + 1, cellSize - 2, cellSize - 2);
+        }
+    }
+
+    // ציור מיקום כל השחקנים במיני-מפה
+    Object.values(gameState.players).forEach(p => {
+        const gx = mapX + (p.sector.x + 2) * cellSize + cellSize / 2;
+        const gy = mapY + (p.sector.y + 2) * cellSize + cellSize / 2;
+        ctx.fillStyle = p.id === myPlayerId ? '#3498db' : '#e74c3c';
+        ctx.beginPath();
+        ctx.arc(gx + (p.id === myPlayerId ? -1.5 : 1.5), gy, 3.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+    });
+
+    ctx.restore();
+}
+
+function draw() {
+    if (!gameState || !myPlayerId || !gameState.players[myPlayerId]) {
+        ctx.fillStyle = '#182418';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        requestAnimationFrame(draw);
+        return;
+    }
+
+    const me = gameState.players[myPlayerId];
+    const sx = me.sector.x, sy = me.sector.y;
+    const sec = gameState.worldSectors[`${sx},${sy}`];
+    const isHome = (sx === 0 && sy === 0);
+    const dist = Math.max(Math.abs(sx), Math.abs(sy));
+
+    if (gameState.isNight) {
+        ctx.fillStyle = isHome ? '#162415' : (dist === 2 ? '#0c170c' : '#111d11');
+    } else {
+        ctx.fillStyle = isHome ? '#2d5a27' : (dist === 2 ? '#1c3b19' : '#244a20');
+    }
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (isHome) {
+        ctx.beginPath();
+        ctx.arc(400, 275, 95, 0, Math.PI * 2);
+        ctx.fillStyle = gameState.isNight ? '#1e2e1d' : '#386b31';
+        ctx.fill();
+    }
+
+    drawFenceRails(sec.fences, gameState.isNight);
+
+    const playersInSector = Object.values(gameState.players).filter(p => p.sector.x === sx && p.sector.y === sy);
+    const allFollowingInSector = [];
+    playersInSector.forEach(p => allFollowingInSector.push(...p.followingSheep));
+
+    const renderList = [
+        ...sec.trees.map(t => ({ type: 'tree', y: t.y + 15, obj: t })),
+        ...sec.fences.map(f => ({ type: 'fence', y: f.y + 8, obj: f })),
+        ...sec.torches.map(t => ({ type: 'torch', y: t.y + 8, obj: t })),
+        ...sec.lostSheep.map(ls => ({ type: 'lostSheep', y: ls.y, obj: ls })),
+        ...allFollowingInSector.map(fs => ({ type: 'followingSheep', y: fs.y, obj: fs })),
+        ...playersInSector.map(p => ({ type: 'player', y: p.y + 10, obj: p })),
+        ...sec.wolves.map(w => ({ type: 'wolf', y: w.y + 8, obj: w }))
+    ];
+
+    if (isHome) {
+        renderList.push(...gameState.sheep.map(s => ({ type: 'sheep', y: s.y, obj: s })));
+    }
+
+    renderList.sort((a, b) => a.y - b.y);
+
+    renderList.forEach(item => {
+        if (item.type === 'tree') drawCartoonTree(item.obj, gameState.isNight);
+        else if (item.type === 'fence') drawCartoonFence(item.obj, gameState.isNight);
+        else if (item.type === 'torch') drawCartoonTorch(item.obj, gameState.isNight, gameState.frameCount);
+        else if (item.type === 'sheep') drawCuteSheep(item.obj, null, gameState.frameCount);
+        else if (item.type === 'lostSheep') drawCuteSheep(item.obj, 'lost', gameState.frameCount);
+        else if (item.type === 'followingSheep') drawCuteSheep(item.obj, 'follow', gameState.frameCount);
+        else if (item.type === 'player') drawShepherd(item.obj, gameState.frameCount);
+        else if (item.type === 'wolf') drawCartoonWolf(item.obj, gameState.frameCount);
+    });
+
+    // חיצי כיוון
+    ctx.save();
+    ctx.fillStyle = gameState.isNight ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.5)';
+    ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+    if (sy > -2) ctx.fillText('▲ צפון', canvas.width / 2, 20);
+    if (sy < 2) ctx.fillText('▼ דרום', canvas.width / 2, canvas.height - 10);
+    if (sx > -2) ctx.fillText('◄ מערב', 35, canvas.height / 2);
+    if (sx < 2) ctx.fillText('מזרח ►', canvas.width - 35, canvas.height / 2);
+    ctx.restore();
+
+    if (gameState.isNight) {
+        renderNightLighting(sec, playersInSector, gameState.frameCount);
+        sec.wolves.forEach(w => {
+            ctx.fillStyle = w.blinded ? '#f1c40f' : '#ff3333';
+            ctx.beginPath();
+            ctx.arc(w.x + (w.facing * 10), w.y - 7, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    if (me.hurtTimer > 0) {
+        ctx.save();
+        ctx.fillStyle = `rgba(231, 76, 60, ${me.hurtTimer * 0.025})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+    }
+
+    drawMinimap(me);
+    requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>
